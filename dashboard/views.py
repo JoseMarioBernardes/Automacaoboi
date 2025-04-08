@@ -4,6 +4,8 @@ from datetime import datetime
 from openpyxl import Workbook
 from django.http import HttpResponse
 import statistics
+from django.core.management import call_command
+from django.contrib.auth import get_user_model
 
 def lista_precos(request):
     precos = PrecoBoi.objects.all()
@@ -75,3 +77,21 @@ def exportar_excel(request):
 
     wb.save(response)
     return response
+
+def executar_migracoes(request):
+    try:
+        call_command("migrate")
+        return HttpResponse("✅ Migrações aplicadas com sucesso.")
+    except Exception as e:
+        return HttpResponse(f"❌ Erro ao aplicar migrações: {e}")
+
+def criar_admin(request):
+    try:
+        User = get_user_model()
+        if not User.objects.filter(username='admin').exists():
+            User.objects.create_superuser('admin', 'admin@email.com', 'admin123')
+            return HttpResponse("✅ Superusuário criado com sucesso. Usuário: admin / Senha: admin123")
+        else:
+            return HttpResponse("ℹ️ Superusuário já existe.")
+    except Exception as e:
+        return HttpResponse(f"❌ Erro ao criar superusuário: {e}")
