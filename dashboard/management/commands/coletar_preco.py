@@ -1,69 +1,47 @@
 from django.core.management.base import BaseCommand
 from dashboard.models import PrecoBoi
 from datetime import datetime
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.firefox.service import Service as FirefoxService
-from selenium.webdriver.firefox.options import Options as FirefoxOptions
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.firefox import GeckoDriverManager
+import requests
+from bs4 import BeautifulSoup
 from django.core.mail import send_mail
 from django.conf import settings
 
 class Command(BaseCommand):
-    help = 'Executa o scraper de preço do boi SP e envia um e-mail de confirmação'
+    help = 'Executa o scraper sem navegador para pegar o preço do boi SP e envia um e-mail de confirmação'
 
     def handle(self, *args, **kwargs):
-        preco = None
-
-        options = FirefoxOptions()
-        options.add_argument("--headless")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-
-        driver = webdriver.Firefox(service=FirefoxService(GeckoDriverManager().install()), options=options)
-        driver.get("https://portal.datagro.com/pt/livestock")
+        url = "https://portal.datagro.com/pt/livestock"
+        headers = {"User-Agent": "Mozilla/5.0"}
 
         try:
-            WebDriverWait(driver, 20).until(
-                EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'Indicador do Boi SP')]"))
-            )
-            elemento = driver.find_element(By.XPATH, "//*[contains(text(), 'Indicador do Boi SP')]")
-            linha = elemento.find_element(By.XPATH, "./ancestor::tr")
-            colunas = linha.find_elements(By.TAG_NAME, "td")
-            preco = colunas[-1].text.strip()
+            response = requests.get(url, headers=headers, timeout=20)
+            response.raise_for_status()
+
+            soup = BeautifulSoup(response.text, 'html.parser')
+            linha = soup.find("td", string=lambda x: x and "Indicador do Boi SP" in x)
+            if linha:
+                preco_td = linha.find_parent("tr").find_all("td")[-1]
+                preco = preco_td.text.strip()
+
+                # Salvar no banco
+                PrecoBoi.objects.create(data=datetime.now().date(), preco=preco)
+                self.stdout.write(self.style.SUCCESS(f"Preço salvo: R$ {preco}"))
+
+                send_mail(
+                    subject='✅ Scraper executado com sucesso - Preço do Boi SP',
+                    message=f"Preço salvo para o dia {datetime.now().date()}: R$ {preco}",
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=['diretoria@confinamentomariopinto.com'],
+                    fail_silently=False,
+                )
+            else:
+                raise Exception("Indicador do Boi SP não encontrado na página.")
 
         except Exception as e:
-            driver.quit()
-            self.stderr.write(self.style.ERROR(f"Erro ao capturar o preço: {e}"))
+            self.stderr.write(self.style.ERROR(f"Erro: {e}"))
             send_mail(
                 subject='❌ Erro no scraper do Preço do Boi',
-                message=f"Ocorreu um erro ao capturar os dados do site:\n\n{str(e)}",
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=['diretoria@confinamentomariopinto.com'],
-                fail_silently=False,
-            )
-            return
-
-        driver.quit()
-
-        if preco:
-            PrecoBoi.objects.create(data=datetime.now().date(), preco=preco)
-            self.stdout.write(self.style.SUCCESS(f"Preço do boi SP salvo: R$ {preco}"))
-
-            send_mail(
-                subject='✅ Scraper executado com sucesso - Preço do Boi SP',
-                message=f"O scraper foi executado e o preço de hoje ({datetime.now().date()}) foi salvo com sucesso: R$ {preco}",
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=['diretoria@confinamentomariopinto.com'],
-                fail_silently=False,
-            )
-        else:
-            self.stderr.write(self.style.WARNING("Preço não encontrado."))
-            send_mail(
-                subject='⚠️ Scraper executado, mas sem preço encontrado',
-                message='O scraper foi executado, mas não conseguiu localizar o preço do boi SP no site.',
+                message=f"Ocorreu um erro ao executar o scraper:\n\n{str(e)}",
                 from_email=settings.DEFAULT_FROM_EMAIL,
                 recipient_list=['diretoria@confinamentomariopinto.com'],
                 fail_silently=False,
