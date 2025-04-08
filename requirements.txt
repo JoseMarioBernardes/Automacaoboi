@@ -3,9 +3,11 @@ attrs==25.3.0
 beautifulsoup4==4.13.3
 certifi==2025.1.31
 charset-normalizer==3.4.1
+dj-database-url==2.3.0
 Django==5.2
 et_xmlfile==2.0.0
 greenlet==3.1.1
+gunicorn==23.0.0
 h11==0.14.0
 idna==3.10
 openpyxl==3.1.5
@@ -27,4 +29,3 @@ urllib3==2.3.0
 webdriver-manager==4.0.2
 websocket-client==1.8.0
 wsproto==1.2.0
-dj-database-url==2.3.0
